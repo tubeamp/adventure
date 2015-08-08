@@ -1,0 +1,539 @@
+<html>
+
+<head>
+
+<script>
+
+
+
+const DIR_LEFT	= 1;
+const DIR_RIGHT	= 2;
+const DIR_UP	= 3;
+const DIR_DOWN	= 4;
+
+
+
+
+
+// === items ===
+const MAX_ITEMS			= 10;
+const ITEM_AXE			= 0;
+const ITEM_SWORD		= 1;
+const ITEM_HELMET		= 2;
+const ITEM_SHIELD		= 3;
+const ITEM_APPLE		= 4;
+const ITEM_MUSHROOM_YLW	= 5;
+const ITEM_MUSHROOM_RED	= 6;
+const ITEM_POTION_YLW	= 7;
+const ITEM_POTION_BLUE	= 8;
+const ITEM_POTION_GREEN	= 9;
+
+
+
+// === monsters ===
+const MONSTER_WOLF			= 0;
+const MONSTER_WOLF_BLACK	= 1;
+const MONSTER_WOLF_BOAR		= 2;
+const MONSTER_WOLF_LIZARD	= 3;
+const MONSTER_SKELETON		= 4;
+const MONSTER_GHOST			= 5;
+
+var monster_refs = [];
+monster_refs[0] = { name : 'wolf',			hp: 20, attack:10 };
+monster_refs[1] = { name : 'black wolf',	hp: 20, attack:15 };
+monster_refs[2] = { name : 'boar',			hp: 20, attack:20 };
+monster_refs[3] = { name : 'lizard',		hp: 20, attack:25 };
+monster_refs[4] = { name : 'skeleton',		hp: 20, attack:30 };
+monster_refs[5] = { name : 'ghost',			hp: 20, attack:35 };
+
+var monsters = [];
+
+// === map ===
+const MAP_SIZE_X		= 32;
+const MAP_SIZE_Y		= 32;
+const VIEWPORT_SIZE_X	= 20;
+const VIEWPORT_SIZE_Y	= 14;
+const CELL_SIZE			= 32;
+
+
+const CELL_GRASS		= 0;
+const CELL_GRASS_VAR	= 1;
+const CELL_TREE			= 2;
+const CELL_STUMP		= 3;
+const CELL_CHEST		= 4;
+const CELL_CHEST_EMPTY	= 5;
+const CELL_WATER		= 6;
+const CELL_BRIDGE		= 7;
+const CELL_BUSH			= 8;
+
+var map = new Array( MAP_SIZE_X );	// see functuion init();
+
+var view = {
+	offset_x : 0,
+	offset_y : 0
+};
+
+// === hero ===
+var hero = {
+	x		: 0,
+	y		: 0,
+	gold	: 0,
+	hp		: 100,
+	items	: [ ]
+};
+
+
+
+/*
+
+*/
+function init()
+{
+	//
+	var canvas = document.getElementById("game_map");
+	canvas.width  = CELL_SIZE * VIEWPORT_SIZE_X;
+	canvas.height = CELL_SIZE * ( VIEWPORT_SIZE_Y + 1 );
+	
+	for( var x = 0; x < MAP_SIZE_X; x++ )
+	{
+		map[x] = new Array( MAP_SIZE_Y );
+	}
+		
+	
+	// map gen
+	for( var x = 0; x < MAP_SIZE_X; x++ )
+	{
+		for( var y = 0; y < MAP_SIZE_Y; y++ )
+		{
+			map[x][y] = CELL_GRASS;
+		}
+	}
+	gen_cell( 0, 0, MAP_SIZE_X-1, MAP_SIZE_Y-1, 32, CELL_GRASS_VAR );
+	gen_cell( 0, 0, MAP_SIZE_X-1, MAP_SIZE_Y-1, 32, CELL_TREE );
+	gen_cell( 0, 0, MAP_SIZE_X-1, MAP_SIZE_Y-1, 32, CELL_CHEST );
+	
+	gen_cell( 0, 0, MAP_SIZE_X-1, MAP_SIZE_Y-1, 32, CELL_WATER );
+	gen_cell( 0, 0, MAP_SIZE_X-1, MAP_SIZE_Y-1, 4, CELL_BRIDGE );
+	
+	// hero
+	for( var i = 0; i < hero.items.length; i++ )
+	{
+		hero.items[i] = 0;
+	}
+	
+	// gen monsters
+	monsters.length = 0;
+	for( var i = 0; i < 20; i++ )
+	{
+		var rnd_x = getRandomInt( 0, MAP_SIZE_X-1 );
+		var rnd_y = getRandomInt( 0, MAP_SIZE_Y-1 );
+		monsters.push( 
+			{	x		: rnd_x, 
+				y		: rnd_y,
+				type	: MONSTER_WOLF,
+				hp		: 50
+			} );
+	}
+	
+	
+	document.addEventListener('keydown', onkbd, false);
+    	
+	draw();
+	
+	clear_messages();
+	put_message("You enter the world.\n");
+}
+
+function onkbd(event)
+{
+	switch( event.keyCode ) {
+		case 37 :
+			hero_move( DIR_LEFT );
+			break;
+		case 38 :
+			hero_move( DIR_UP );
+			break;
+		case 39 :
+			hero_move( DIR_RIGHT );
+			break;
+		case 40 :
+			hero_move( DIR_DOWN );
+			break;
+	}
+		
+}
+/*
+
+*/
+function gen_cell( left, top, right, bottom, num, cell )
+{
+	var x, y;
+	for( var i = 0; i < num; i++ )
+	{
+		x = getRandomInt( left, right );
+		y = getRandomInt( top, bottom );
+		map[ x ][ y ] = cell;
+	}
+
+}
+
+
+function pass_tile( x, y )
+{
+	if( ( map[ x ][ y ] == CELL_GRASS ) | 
+		( map[ x ][ y ] == CELL_GRASS_VAR ) |
+		( map[ x ][ y ] == CELL_BRIDGE ) )
+		return 1;
+	else
+		return 0;
+}
+
+function hero_move( dir )
+{
+	//
+	var new_x = hero.x;
+	var new_y = hero.y;
+	
+	if( dir == DIR_LEFT )	new_x--;
+	if( dir == DIR_RIGHT )	new_x++;
+	
+	if( dir == DIR_UP )		new_y--;
+	if( dir == DIR_DOWN )	new_y++;
+	
+	new_x = clamp( new_x, 0, MAP_SIZE_X-1 );
+	new_y = clamp( new_y, 0, MAP_SIZE_Y-1 );
+	
+	// collision detection
+	
+	for( var i = 0; i < monsters.length; i++ )	
+	{
+		if( ( monsters[i].x == new_x ) &&
+			( monsters[i].y == new_y ) )
+		{
+			hero_attack( i );
+			return;
+		}
+	};
+	
+	if( pass_tile( new_x, new_y ) )
+	{
+		hero.x = new_x;
+		hero.y = new_y;
+	} else 
+	{
+		hero_action( new_x, new_y );
+		return;
+	}
+	
+	// update view
+	if( ( hero.x - view.offset_x ) > ( VIEWPORT_SIZE_X - 4 ) )
+		view.offset_x += 1;
+		
+	if( ( hero.x - view.offset_x ) < ( 0 + 4 ) )
+		view.offset_x -= 1;
+	
+	if( ( hero.y - view.offset_y ) > ( VIEWPORT_SIZE_Y - 4 ) )
+		view.offset_y += 1;
+	
+	if( ( hero.y - view.offset_y ) < 4 )
+		view.offset_y -= 1;
+		
+	view.offset_x = clamp( view.offset_x, 0, MAP_SIZE_X - VIEWPORT_SIZE_X );
+	view.offset_y = clamp( view.offset_y, 0, MAP_SIZE_Y - VIEWPORT_SIZE_Y );
+	
+	draw();
+	
+	//put_message("You moving.\n");
+}
+
+
+function hero_attack( i )
+{
+	
+	if( monsters[i].hp <= 0 )
+		return;
+	
+	var name = monster_refs[ monsters[i].type ].name;
+	
+	var dmg = getRandomInt( 0, 10 );
+	monsters[i].hp-= dmg;
+	
+	if( monsters[i].hp <= 0 )
+	{
+		put_message( "You killed " + name + ".\n" );
+		map[ monsters[i].x ][ monsters[i].y ] = CELL_CHEST;
+		monsters.splice( i, 1 );
+	}
+	else
+	{
+		put_message( "You hit " + name + " for " + dmg +" damage.\n" );
+	}
+	
+	draw();
+}
+
+
+function hero_action( x, y )
+{
+	
+	switch( map[x][y] )
+	{
+		case CELL_TREE :
+			if( hero.items[ITEM_AXE] > 0 )
+			{
+				map[x][y] = CELL_STUMP;
+				//
+				//put_message( "You took a wood.\n" );
+			}
+			else
+				put_message( "You see a tree.\n" );
+			break;
+		
+		case CELL_STUMP :
+			put_message( "You see a stump.\n" );
+			break;
+		
+		case CELL_CHEST :
+			map[x][y] = CELL_CHEST_EMPTY;
+			loot( 70, 25 );
+			//put_message( "You see a chest.\n" );
+			break;
+			
+		case CELL_CHEST_EMPTY :
+			put_message( "This chest is empty.\n" );
+			break;
+			
+		case CELL_WATER :
+			put_message( "You cant swim.\n" );
+			break;
+			
+		default :
+			break;
+	}
+	
+	draw();
+}
+
+
+function monster_attack()
+{
+}
+
+
+function draw()
+{
+	// getting sprites
+	var img_grass		= document.getElementById("img_grass");
+	var img_grass_var	= document.getElementById("img_grass_var");
+	var img_wolf		= document.getElementById("img_wolf");
+	var img_tree		= document.getElementById("img_tree");
+	var img_stump		= document.getElementById("img_stump");
+	var img_chest		= document.getElementById("img_chest");
+	var img_chest_empty	= document.getElementById("img_chest_empty");
+	var img_water		= document.getElementById("img_water");
+	var img_bridge		= document.getElementById("img_bridge");
+	var img_inv_cell	= document.getElementById("img_inv_cell");
+	
+	
+	
+	var sprite = new Array(
+		img_grass,
+		img_grass_var,
+		img_tree,
+		img_stump,
+		img_chest,
+		img_chest_empty,
+		img_water,
+		img_bridge,
+		img_inv_cell
+	);
+
+	var c = document.getElementById("game_map");
+	var ctx = c.getContext("2d");
+	
+	// draw map
+	var world_x, world_y;
+
+	for( var x = 0; x < VIEWPORT_SIZE_X; x++ )
+	{
+		for( var y = 0; y < VIEWPORT_SIZE_Y; y++ )
+		{			
+			world_x =  x + view.offset_x;
+			world_y =  y + view.offset_y;	
+					
+			ctx.drawImage( 
+				img_grass, 
+				x * CELL_SIZE, 
+				y * CELL_SIZE 
+			);
+						
+			ctx.drawImage( 
+				sprite[ map[ world_x ][ world_y ] ], 
+				x * CELL_SIZE, 
+				y * CELL_SIZE 
+			);
+
+		}
+	}
+	
+	// draw inventory
+	for( var i = 0; i < MAX_ITEMS-1; i++ )
+	{
+		draw_cell( i + 2, VIEWPORT_SIZE_Y, img_inv_cell );
+		ctx.font="11px Terminal";
+		ctx.fillStyle='white';
+		ctx.fillText( 
+			i+1,								// text
+			(i + 2) * CELL_SIZE + 2, 			// x
+			VIEWPORT_SIZE_Y * CELL_SIZE	+ 12	// y
+		);
+	}
+	
+	// draw hero
+	draw_sprite( hero.x, hero.y, img_hero );
+	
+	// draw monsters	
+	for( var i = 0; i < monsters.length; i++ )
+	{
+		if( ( monsters[i].x >= view.offset_x ) &&
+			( monsters[i].y >= view.offset_y ) &&
+			( monsters[i].x < ( view.offset_x + VIEWPORT_SIZE_X )) &&
+			( monsters[i].y < ( view.offset_y + VIEWPORT_SIZE_Y ))
+		)
+			draw_sprite( monsters[i].x, monsters[i].y, img_wolf );
+	}
+	
+}
+
+function draw_sprite( x, y, img )
+{
+	var c = document.getElementById("game_map");
+	var ctx = c.getContext("2d");
+	ctx.drawImage(
+		img, 
+		( x - view.offset_x ) * CELL_SIZE,
+		( y - view.offset_y ) * CELL_SIZE
+	);
+}
+
+function draw_cell( x, y, img )
+{
+	var c = document.getElementById("game_map");
+	var ctx = c.getContext("2d");
+	ctx.drawImage(
+		img, 
+		x * CELL_SIZE,
+		y * CELL_SIZE
+	);
+}
+
+function loot( gold_rate, item_rate )
+{
+	rnd = getRandomInt(0,100);
+	
+	if( rnd < gold_rate )
+	{
+		gold = getRandomInt(1, 50);
+		hero.gold += gold;
+		put_message( "You took " + gold + " gold.\n" );	
+	} 
+	else if( rnd < gold_rate+item_rate )
+	{
+		hero.items[ ITEM_AXE ] = 1;
+		put_message( "You took item.\n" );		
+	}
+	else
+		put_message( "You took nothing.\n" );	
+	
+}
+
+
+/*
+
+*/
+function put_message( text )
+{
+	var m = document.getElementById("messages");
+	m.value += text;
+	
+	var textarea = document.getElementById('messages');
+	textarea.scrollTop = textarea.scrollHeight;
+}
+	
+function clear_messages()
+{
+	var m = document.getElementById("messages");
+	m.value = "";
+}
+function clamp( x, min, max )
+
+{
+	if( x < min)
+		return min;
+	else if( x > max )
+		return max;
+	else
+		return x;
+}
+
+
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+</script>
+
+
+
+<head>
+
+<!--- --->
+<body onload="init()">
+
+<div style="display:none;">
+<img id="img_grass"			src="img/grass.png">
+<img id="img_grass_var"		src="img/grass_var.png">
+<img id="img_tree"			src="img/tree.png">
+<img id="img_stump"			src="img/stump.png">
+<img id="img_chest"			src="img/chest.png">
+<img id="img_chest_empty"	src="img/chest_empty.png">
+<img id="img_wolf"			src="img/wolf.png">
+<img id="img_hero"			src="img/hero.png">
+<img id="img_water"			src="img/water.png">
+<img id="img_bridge"		src="img/bridge.png">
+<img id="img_inv_cell"		src="img/inventory_cell.png">
+</div>
+
+<p><canvas id="game_map">
+
+<p>
+<table>
+	<tr>
+		<td></td>
+		<td><input type="button" value="up"		onclick="hero_move(DIR_UP)"></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td><input type="button" value="left"	onclick="hero_move(DIR_LEFT)"></td>
+		<td></td>
+		<td><input type="button" value="right"	onclick="hero_move(DIR_RIGHT)"></td>
+	</tr>
+	<tr>
+		<td></td>
+		<td><input type="button" value="down"	onclick="hero_move(DIR_DOWN)"></td>
+		<td></td>
+	</tr>
+</table>
+
+<p><textarea id="messages" cols=80 rows=8></textarea>
+
+<p>
+<input type="button" value="hello" onclick="init()">
+<input type="button" value="clear" onclick="clear_messages()">
+
+
+
+
+</body>
+
+</html>
